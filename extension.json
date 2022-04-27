@@ -1,0 +1,13 @@
+{
+  "name": "Socket Source",
+  "apiVersion": "1.1.0",
+  "author": "Michael Leonard",
+  "version": "1.0.0",
+  "description": "Send raw Analyzer frames to a network socket for consumption outside of Saleae",
+  "extensions": {
+    "Socket Source": {
+      "type": "HighLevelAnalyzer",
+      "entryPoint": "saleaesocketsource.SocketSource"
+    }
+  }
+}
