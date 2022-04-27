@@ -6,6 +6,8 @@ This HLA produces no Analyzer frames on its own so will not add any new frames t
 only intercepts frames produced by other analyzers and copies them in JSON format to a socket for
 another tool to listen and provide further data processing.
 
+![Screenshot of Saleae Logic 2 w/ SaleaeSocketSourceHLA and serialsink.py running in a terminal window](assets/screenshot-1.png)
+
 ## Using socketsink.py
 
 This repository includes a helper script `socketsink.py` which can be used to check that the
