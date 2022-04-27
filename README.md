@@ -12,7 +12,7 @@ another tool to listen and provide further data processing.
 
 This repository includes a helper script `socketsink.py` which can be used to check that the
 analyzer is functioning as expected. It implements a basic socket listener which waits for data from
-Saleae and prints frames to STDIN as they are received. There are some basic error recovery mechanisms
+Saleae and prints frames to STDOUT as they are received. There are some basic error recovery mechanisms
 built in, but this implementation is far from robust.
 
 Basic usage instructions can be found with `python socketsink.py --help`:
