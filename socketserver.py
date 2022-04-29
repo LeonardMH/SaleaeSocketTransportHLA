@@ -1,7 +1,7 @@
-"""SaleaeSocketSourceHLA
+"""SaleaeSocketTransportHLA
 
-Implements a high level analyzer for Saleae Logic 2 which accepts Analyzer frame data and redirects it to 
-a network port for external processing.
+Implements a high level analyzer for Saleae Logic 2 which opens a bidirectional network socket for
+sending data to an external program and accepts return data to generate analyzer frames.
 """
 import socket
 import json
@@ -50,7 +50,7 @@ def rx_data_until_newline(conn, current_accumulator=None):
     return accumulator[0:-1], accumulator[-1]
 
 
-class SocketSource(HighLevelAnalyzer):
+class SocketTransport(HighLevelAnalyzer):
     # BEGIN: User Settings
     socket_host = StringSetting(label='Host (optional, default=127.0.0.1)')
     socket_port = StringSetting(label="Port (optional, default=50626)")

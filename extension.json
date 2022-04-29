@@ -1,13 +1,13 @@
 {
-  "name": "Socket Source",
+  "name": "Socket Transport",
   "apiVersion": "1.1.0",
   "author": "Michael Leonard",
-  "version": "1.0.0",
-  "description": "Send raw Analyzer frames to a network socket for consumption outside of Saleae",
+  "version": "1.1.0",
+  "description": "Send and receive analyzer data over a network socket (routed to localhost by default).",
   "extensions": {
-    "Socket Source": {
+    "Socket Transport": {
       "type": "HighLevelAnalyzer",
-      "entryPoint": "saleaesocketsource.SocketSource"
+      "entryPoint": "socketserver.SocketTransport"
     }
   }
 }
