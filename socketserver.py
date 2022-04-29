@@ -3,10 +3,13 @@
 Implements a high level analyzer for Saleae Logic 2 which opens a bidirectional network socket for
 sending data to an external program and accepts return data to generate analyzer frames.
 """
+from datetime import datetime, timezone
 import socket
 import json
 
 from saleae.analyzers import HighLevelAnalyzer, AnalyzerFrame, StringSetting, ChoicesSetting
+from saleae.data.timing import SaleaeTime
+
 from collections import OrderedDict
 
 
@@ -16,11 +19,6 @@ CHECK_FOR_RESPONSE_OPTIONS = OrderedDict((
     ("No Check", False),
     ("Check", True),
 ))
-
-
-def saleae_time_to_str(saleae_time):
-    """Convert the SaleaeTime object to ISO formatted string"""
-    return saleae_time.as_datetime().isoformat()
 
 
 def rx_data_until_newline(conn, current_accumulator=None):
@@ -57,6 +55,9 @@ class SocketTransport(HighLevelAnalyzer):
     check_for_response = ChoicesSetting(CHECK_FOR_RESPONSE_OPTIONS.keys())
 
     socket = None
+    result_types = {
+        'text': { 'format': '{{data.text}}'}
+    }
 
     def __init__(self):
         """Called anytime the Analyzer is initialized which happens when it is first added and on every re-run"""
@@ -68,6 +69,7 @@ class SocketTransport(HighLevelAnalyzer):
             self.socket_send_json({
                 "type": "client-notification",
                 "data": "Ping: checking connection",
+                "level": "debug",
             }, unsafe=True)
         except (AttributeError, ConnectionResetError):
             self.socket_connect()
@@ -79,6 +81,7 @@ class SocketTransport(HighLevelAnalyzer):
         self.socket_send_json({
             "type": "client-notification",
             "data": "Connected to socket",
+            "level": "info",
         })
 
         # indicate to the client whether we expect to receive responses or not
@@ -137,8 +140,8 @@ class SocketTransport(HighLevelAnalyzer):
         self.socket_send_json({
             "type": "frame",
             "frame-type": frame.type,
-            "start": saleae_time_to_str(frame.start_time),
-            "end": saleae_time_to_str(frame.end_time),
+            "start": str(frame.start_time),
+            "end": str(frame.end_time),
             "data": frame_data,
         })
 
@@ -166,6 +169,43 @@ class SocketTransport(HighLevelAnalyzer):
             print(f"Warning: missed_packets={self.missed_packets}")
             response = response[-1]
 
-        # attempt to decode the data as JSON as an integrity check
-        _ = json.loads(response)
-        print(f"resp: {response}")
+        def sal_to_dt(time_str):
+            """
+            input: time in a format `yyyy-mm-ddT0hh:mm:ss.up_to_12_digits`
+            """
+            broad, fine = time_str.split("T")
+            Y, M, d = [int(x) for x in broad.split("-")]
+            h, m, s = fine.split(":")
+            int_s, ns = s.split(".")
+            int_s = int(int_s)
+            ns = int(ns[:-4 if ns.endswith("000Z") else 0])
+
+            dt = datetime(Y, M, d, int(h), int(m), int_s, tzinfo=timezone.utc)
+            ms = float(ns)/1000000.0
+
+            return dt, ms
+
+        # decode the data as JSON for further processing
+        decoded = json.loads(response)
+
+        # if the data doesn't say to make a frame, don't make a frame
+        if decoded is None or decoded['type'] != 'frame':
+            return
+
+        # convert lists of integers in the data entry back to bytes
+        for (k, v) in decoded['data'].items():
+            if isinstance(v, list): 
+                decoded['data'][k] = int.from_bytes(v, 'little')
+
+        # create a new AnalyzerFrame based on the response data
+        start_dt, start_ms = sal_to_dt(decoded['start'])
+        end_dt, end_ms = sal_to_dt(decoded['end'])
+
+        base_frame = AnalyzerFrame(
+            decoded['frame-type'], 
+            start_time=SaleaeTime(start_dt, millisecond=start_ms),
+            end_time=SaleaeTime(end_dt, millisecond=end_ms),
+            data=decoded['data'],
+        )
+
+        return base_frame
