@@ -1,12 +1,24 @@
 import socket
 import threading
+import logging
 
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 50626
 
 
+def response_handler(recv):
+    """Implement socket responder here"""
+    # for now, just respond back with the same data we got
+    if isinstance(recv, str):
+        recv = (recv + '\n').encode('utf-8')
+
+    return recv
+
+
 def bind(host=DEFAULT_HOST, port=DEFAULT_PORT):
+    logging.debug(f"bind({host}, {port})")
+
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 
@@ -20,20 +32,79 @@ def bind(host=DEFAULT_HOST, port=DEFAULT_PORT):
         return (None, None)
 
 
-def listener(conn, addr, recv_bufsize=1024):
+def rx_data_until_newline(conn, current_accumulator=None, timeout=1.0):
+    import time
+
+    start_time = time.time()
+
+    if current_accumulator is not None:
+        accumulator = [current_accumulator]
+    else:
+        accumulator = [""]
+
+    while True:
+        logging.debug("rx_data_until_newline while loop")
+
+        if time.time() - timeout > start_time:
+            logging.debug("rx_data_until_newline timeout")
+            return (None, None)
+
+        data = conn.recv(2048).decode('utf-8')
+        if '\n' not in data:
+            # no newline in this dataset, just keep appending to our current string
+            accumulator[0] += data
+        else:
+            # found at least one newline in this string, split it on newlines (if newline is the last
+            # character split will return an empty string in the last entry)
+            split_data = data.split('\n')
+            accumulator[0] += split_data[0]
+            accumulator.extend(split_data[1:])
+            break
+    
+    # accumulator now contains an initial entry which is all the data we got up to the point of the first 
+    # newline, as there could be multiple newlines in any given data packet, we will return a tuple here:
+    # - the first entry is a list containing all of the 'valid' data packets
+    # - the second entry is the last entry which we will start our next rx sequence with
+    return accumulator[0:-1], accumulator[-1]
+
+
+def listener(conn, addr):
+    import json
+
+    data_accumulator = ""
+
     with conn:
         while True:
-            data = conn.recv(recv_bufsize)
-            if data is None or data == b'':
+            logging.debug("listener loop")
+
+            # it's possible the connection can be reset by Saleae here on capture start, 
+            # if so just go back and rebind the socket
+            try:
+                data, data_accumulator = rx_data_until_newline(conn, current_accumulator=data_accumulator)
+
+                # if the rx_data function hits a timeout it will return (None, None), in this case go 
+                # back to rebinding
+                if any([x is None for x in (data, data_accumulator)]):
+                    return
+            except ConnectionResetError:
                 return
 
-            # print the data as a string without any additional newlines,
-            # they are all already encoded into the data
-            print(data.decode('utf-8'), end='')
+            for packet in data:
+                # if we get here, we got some data in the receive buffer, 
+                # process it and respond back to Saleae
+                resp = response_handler(packet)
+
+                if resp is not None:
+                    conn.sendall(resp)
+
+                # attempt to decode the data as JSON as an integrity check
+                _ = json.loads(packet)
+                print(packet)
 
 
 def event_loop(host, port):
     while True:
+        logging.debug(f"event_loop({host}, {port})")
         conn, addr = bind(host=args.host, port=args.port)
 
         # bind sets a timeout of 100ms to check for a connection, if it doesn't
