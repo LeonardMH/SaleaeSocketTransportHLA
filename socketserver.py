@@ -3,15 +3,14 @@
 Implements a high level analyzer for Saleae Logic 2 which opens a bidirectional network socket for
 sending data to an external program and accepts return data to generate analyzer frames.
 """
-from datetime import datetime, timezone
 import socket
 import json
-from statistics import mode
 
 from saleae.analyzers import HighLevelAnalyzer, AnalyzerFrame, StringSetting, ChoicesSetting
 from saleae.data.timing import SaleaeTime
 
 from collections import OrderedDict
+from datetime import datetime, timezone
 from enum import Enum
 
 class FileStreamControl(Enum):

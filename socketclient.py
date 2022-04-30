@@ -8,6 +8,10 @@ import logging
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 50626
 
+QUIET_RECEIVE = False
+QUIET_RESPONSE = False
+SHOW_MSG_DIR = False
+
 
 class ResponseHandler:
     """Implement this class to handle decoding over multiple frames of data"""
@@ -165,12 +169,18 @@ def listener(conn, addr):
             for packet in data:
                 # if we get here, we got some data in the receive buffer, 
                 # process it and respond back to Saleae
+                if not QUIET_RECEIVE:
+                    print(("-> " if SHOW_MSG_DIR else "") + packet)
+
                 resp = RESPONSE_HANDLER.handle_response(packet)
 
                 if resp is not None:
                     conn.sendall(resp)
 
-                print(packet)
+                    if not QUIET_RESPONSE:
+                        rsp_str = resp.decode('utf-8').rstrip()
+                        print(("<- " if SHOW_MSG_DIR else "") + rsp_str)
+
 
 
 def event_loop(host, port):
@@ -195,11 +205,24 @@ if __name__ == "__main__":
     import sys
     import time
 
-    parser = argparse.ArgumentParser("socketsink.py: Read data from a streaming socket and print to STDIN")
-    parser.add_argument("--host", default=DEFAULT_HOST, help="Host address to bind to")
-    parser.add_argument("--port", default=DEFAULT_PORT, help="Port to bind to", type=int)
+    parser = argparse.ArgumentParser("socketsink.py: Read data from a streaming socket and print to STDOUT")
+    parser.add_argument("-H", "--host", default=DEFAULT_HOST, help="host address to bind to")
+    parser.add_argument("-P", "--port", default=DEFAULT_PORT, help="port to bind to", type=int)
+    parser.add_argument('-q', '--quiet', action='store_true', help="do not print any message responses")
+    parser.add_argument('--quiet-receive', action='store_true', help="do not print the data received from the server")
+    parser.add_argument('--quiet-response', action='store_true', help="do not print the data sent back to the server")
+    parser.add_argument('--show-message-dir', action='store_true', help="when logging responses, show direction of message transmission")
 
     args = parser.parse_args()
+
+    if args.quiet:
+        QUIET_RECEIVE = False
+        QUIET_RESPONSE = False
+        SHOW_MSG_DIR = False
+    else:
+        QUIET_RECEIVE = args.quiet_receive
+        QUIET_RESPONSE = args.quiet_response
+        SHOW_MSG_DIR = args.show_message_dir
 
     # set this up as a deamon thread which allows us to run the event loop in
     # the background (the socket accept method is blocking) and still exit out
