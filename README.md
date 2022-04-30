@@ -14,7 +14,7 @@ shown in the screenshot below and can be generally divided into "Socket Controls
 ![Screenshot of SaleaeSocketTransportHLA Analyzer Settings](assets/analyzer-settings-screenshot.png)
 
 Some general use cases:
-- **You want to stream to a network socket only**: Set `Host|Port|Socket Check Response` as required for your client, set `Stream to File = OFF`.
+- **You want to stream to a socket only**: Set `Host|Port|Socket Check Response` as required for your client, set `Stream to File = OFF`.
 - **You want to stream to a file only**: Set `Stream to File = ON, no socket`, and ensure that `Output File` is a valid path and full file name (with extension), set `File Stream Mode` as desired.
 - **You want to stream to a socket and a file**: Follow the same general guidelines as the above options, but set `Stream to File = ON, with socket`.
 
@@ -23,7 +23,7 @@ Some general use cases:
 | Option | Description |
 | ------ | ----------- |
 | Host   | Set the host address to bind the socket to. By default this will use `localhost` loopback on address `127.0.0.1`, but you can change this to a different network address provided that it can be routed to in the clear. |
-| Port   | Set the port number to bind the socket to. By default this will use `50626`, but you can use any socket number you wish. A widely compatible range of 'ephemeral ports' would be in the range of `49125-65535`, anything in this range should be broadly safe to use. |
+| Port   | Set the port number to bind the socket to. By default this will use `50626`, but you can use any socket number you wish. A widely compatible set of 'ephemeral ports' would be in the range of `49125-65535`, anything within these bounds should be broadly safe to use. |
 | Socket Check Response | Controls whether the analyzer should check for a response from the client. If there is no connection this setting doesn't matter and the analyzer won't check anyways, but **if there is a connection and the client does not respond the analyzer will wait indefintely**. |
 
 ### File Stream Controls
@@ -33,6 +33,79 @@ Some general use cases:
 | Stream to File   | Controls whether file streaming should be enabled or not, there are three options. `OFF` disables file streaming, and makes the other File Stream options irrelevant. `ON, with socket` enables streaming to a file and a socket at the same time. `ON, no socket` enables streaming to a file, and will not connect to a socket. |
 | Output File   | Full and valid path to a file, including file name and extension. The final name of the output file will depend on the `File Stream Mode` selection. |
 | File Stream Mode | Controls how data is saved to the file across multiple runs. `Overwrite/Append` should probably just be called `Append`, it will create the file exactly as named by `Output File`, multiple runs will continue appending data to this same file. `Sequence` will use the provided `Output File` to generate a monotonically increasing set of file names of the format `<fname>-<seq_num><ext>` where `Output File = <fname><ext>`, each analyzer run will create a new file. `Timestamp` will create a file name based on `Output File` of the format `<fname>-<timestamp><ext>` where the timestamp is of format `YYYY-MM-DDTHH-mm-ss`, each analyzer run will create a new file (assuming runs are separated by at least one second). |
+
+## Using socketclient.py
+
+This repository includes a helper utility `socketclient.py` which can be used to connect to the Analyzer
+socket, process received data, and generate responses back to the Analyzer. The behavior of this utility
+is fully customizable by implementing your own subclass of `responsehandler.ResponseHandler`, there are a few
+example implementations in that module to get started with.
+
+You can exit this tool at any time with the `CTRL+C` key combination.
+
+Basic usage instructions can be found with `python socketclient.py --help`:
+
+```
+usage: socketsink.py: Read data from a streaming socket and print to STDOUT [-h] [-H HOST] [-P PORT] [-q] [-r RESPONDER] [--quiet-receive] [--quiet-response] [--show-message-dir]
+
+options:
+  -h, --help            show this help message and exit
+  -H HOST, --host HOST  host address to bind to
+  -P PORT, --port PORT  port to bind to
+  -q, --quiet           do not print any message responses
+  -r RESPONDER, --responder RESPONDER
+                        custom responder to process messages from server, provide a full path and class name as <fpath>:<class_name>
+  --quiet-receive       do not print the data received from the server
+  --quiet-response      do not print the data sent back to the server
+  --show-message-dir    when logging responses, show direction of message transmission
+```
+
+### Example Response Handler and Usage of Custom Responder
+
+Implementing a response handler is simple (in theory). As an example, this section will walk through the 
+steps necessary to implement a response handler that responds to every frame with the word "fish".
+
+First, create a new file named `fishresponder.py` anywhere you like. The untracked `responders` folder
+is provided in this repository for this purpose, but anywhere on your system should be fine.
+
+Within that file, implement the following `ResponseHandler`:
+
+```python
+from responsehandler import ResponseHandler
+
+
+class FishResponder(ResponseHandler):
+    """A response handler that responds to every frame with the word 'fish'"""
+    def handle_incoming_response(self, recv: str):
+        decode = self.prepare_json_incoming(recv)
+
+        # if the received data is not a frame, just send it back as we received it
+        if decode['type'] != 'frame':
+            return self.prepare_json_outgoing(recv)
+
+        decode['frame-type'] = 'text'
+        decode['data']['text'] = 'fish'
+        return self.prepare_json_outgoing(decode)
+  ```
+
+ Now execute `socketclient.py` and tell it where to find your responder using the `-r/--responder` option, 
+ if you placed the file in the `responders` folder, your executed command should look something like this:
+
+ ```
+ python socketclient.py -r responders/fishresponder.py:FishResponder
+ ```
+
+Finally, open up Saleae Logic 2 and attach the Socket Transport analyzer to a low level analyzer of your choice,
+capture some data or analyze an existing file and watch as your data is transformed to fish.
+
+![Screenshot of FishResponder](assets/fish-responder.png)
+
+## Using `socketserver` and `socketclient` Over the Network
+
+While this HLA was designed primarily with the intent of routing data from within Saleae to another
+data consumer on the same machine (using localhost loopback), the decision to use sockets as the underlying 
+transport means we get the ability to send Saleae data to a remote machine for free. This is not really an
+intended use case and may not be robust, so YMMV.
 
 ## Socket Data Transport Format
 
@@ -148,75 +221,3 @@ This message should be consumed by the client to control whether it responds to 
 ### Data from socketclient to socketserver (In to Saleae)
 
 > NOTE: This implementation is still a work in progress and the documentation is expected to expand as new incoming data formats are implemented.
-## Using socketclient.py
-
-This repository includes a helper utility `socketclient.py` which can be used to connect to the Analyzer
-socket, process received data, and generate responses back to the Analyzer. The behavior of this utility
-is fully customizable by implementing your own subclass of `responsehandler.ResponseHandler`, there are a few
-example implementations in that module to get started with.
-
-You can exit this tool at any time with the `CTRL+C` key combination.
-
-Basic usage instructions can be found with `python socketclient.py --help`:
-
-```
-usage: socketsink.py: Read data from a streaming socket and print to STDOUT [-h] [-H HOST] [-P PORT] [-q] [-r RESPONDER] [--quiet-receive] [--quiet-response] [--show-message-dir]
-
-options:
-  -h, --help            show this help message and exit
-  -H HOST, --host HOST  host address to bind to
-  -P PORT, --port PORT  port to bind to
-  -q, --quiet           do not print any message responses
-  -r RESPONDER, --responder RESPONDER
-                        custom responder to process messages from server, provide a full path and class name as <fpath>:<class_name>
-  --quiet-receive       do not print the data received from the server
-  --quiet-response      do not print the data sent back to the server
-  --show-message-dir    when logging responses, show direction of message transmission
-```
-
-### Example Response Handler and Usage of Custom Responder
-
-Implementing a response handler is simple (in theory), as an example this section will walk through the 
-steps necessary to implement a response handler that responds to every frame with the word "fish".
-
-First, create a new file named `fishresponder.py` anywhere you like. The untracked `responders` folder
-is provided in this repository for this purpose, but anywhere on your system should be fine.
-
-Within that file, implement the following `ResponseHandler`:
-
-```python
-from responsehandler import ResponseHandler
-
-
-class FishResponder(ResponseHandler):
-    """A response handler that responds to every frame with the word 'fish'"""
-    def handle_incoming_response(self, recv: str):
-        decode = self.prepare_json_incoming(recv)
-
-        # if the received data is not a frame, just send it back as we recieved it
-        if decode['type'] != 'frame':
-            return self.prepare_json_outgoing(recv)
-
-        decode['frame-type'] = 'text'
-        decode['data']['text'] = 'fish'
-        return self.prepare_json_outgoing(decode)
-  ```
-
- Now execute `socketclient.py` and tell it where to find your responder using the `-r/--responder` option, 
- if you placed the file in the `responders` folder, your executed command should look something like this:
-
- ```
- python socketclient.py -r responders/fishresponder.py:FishResponder
- ```
-
-Finally, open up Saleae Logic 2 and attach the Socket Transport analyzer to a low level analyzer of your choice,
-capture some data or analyze an existing file and watch as your data is transformed to fish.
-
-![Screenshot of FishResponder](assets/fish-responder.png)
-
-## Using `socketserver` and `socketclient` Over the Network
-
-While this HLA was designed primarily with the intent of routing data from within Saleae to another
-data consumer on the same machine (using localhost loopback), the decision to use sockets as the underlying 
-transport means we get the ability to send Saleae data to a remote machine for free. Again, this solution
-is not necessarily robust, so YMMV.
