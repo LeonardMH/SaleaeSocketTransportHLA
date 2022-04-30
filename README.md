@@ -24,7 +24,7 @@ Some general use cases:
 | ------ | ----------- |
 | Host   | Set the host address to bind the socket to. By default this will use `localhost` loopback on address `127.0.0.1`, but you can change this to a different network address provided that it can be routed to in the clear. |
 | Port   | Set the port number to bind the socket to. By default this will use `50626`, but you can use any socket number you wish. A widely compatible range of 'ephemeral ports' would be in the range of `49125-65535`, anything in this range should be broadly safe to use. |
-| Socket Check Response | Controls whether the analyzer should check for a response from the client. If there is no connection this setting doesn't matter and the analyzer won't check anyways, but if there is a connection and the client does not intend to respond it's better to set this option for improved performance. This preference is communicated from the server to the client, and a well behaved client will respect this option. |
+| Socket Check Response | Controls whether the analyzer should check for a response from the client. If there is no connection this setting doesn't matter and the analyzer won't check anyways, but **if there is a connection and the client does not respond the analyzer will wait indefintely**. |
 
 ### File Stream Controls
 
@@ -150,32 +150,73 @@ This message should be consumed by the client to control whether it responds to 
 > NOTE: This implementation is still a work in progress and the documentation is expected to expand as new incoming data formats are implemented.
 ## Using socketclient.py
 
-This repository includes a helper script `socketclient.py` which can be used to check that the
-analyzer is functioning as expected. It implements a basic socket client which waits for data from
-Saleae and prints frames to STDOUT as they are received. There are some basic error recovery mechanisms
-built in, but this implementation is far from robust. Additionally, there is a sample function which
-can be used as a hook to generate return data for consumption within Saleae.
+This repository includes a helper utility `socketclient.py` which can be used to connect to the Analyzer
+socket, process received data, and generate responses back to the Analyzer. The behavior of this utility
+is fully customizable by implementing your own subclass of `responsehandler.ResponseHandler`, there are a few
+example implementations in that module to get started with.
+
+You can exit this tool at any time with the `CTRL+C` key combination.
 
 Basic usage instructions can be found with `python socketclient.py --help`:
 
 ```
-usage: socketsink.py: Read data from a streaming socket and print to STDOUT [-h] [-H HOST] [-P PORT] [-q] [--quiet-receive] [--quiet-response] [--show-message-dir]
+usage: socketsink.py: Read data from a streaming socket and print to STDOUT [-h] [-H HOST] [-P PORT] [-q] [-r RESPONDER] [--quiet-receive] [--quiet-response] [--show-message-dir]
 
 options:
   -h, --help            show this help message and exit
   -H HOST, --host HOST  host address to bind to
   -P PORT, --port PORT  port to bind to
   -q, --quiet           do not print any message responses
+  -r RESPONDER, --responder RESPONDER
+                        custom responder to process messages from server, provide a full path and class name as <fpath>:<class_name>
   --quiet-receive       do not print the data received from the server
   --quiet-response      do not print the data sent back to the server
   --show-message-dir    when logging responses, show direction of message transmission
 ```
 
-You can exit this tool at any time with the `CTRL+C` key combination.
+### Example Response Handler and Usage of Custom Responder
 
-## Using SaleaeSocketTransportHLA and socketclient.py over network
+Implementing a response handler is simple (in theory), as an example this section will walk through the 
+steps necessary to implement a response handler that responds to every frame with the word "fish".
+
+First, create a new file named `fishresponder.py` anywhere you like. The untracked `responders` folder
+is provided in this repository for this purpose, but anywhere on your system should be fine.
+
+Within that file, implement the following `ResponseHandler`:
+
+```python
+from responsehandler import ResponseHandler
+
+
+class FishResponder(ResponseHandler):
+    """A response handler that responds to every frame with the word 'fish'"""
+    def handle_incoming_response(self, recv: str):
+        decode = self.prepare_json_incoming(recv)
+
+        # if the received data is not a frame, just send it back as we recieved it
+        if decode['type'] != 'frame':
+            return self.prepare_json_outgoing(recv)
+
+        decode['frame-type'] = 'text'
+        decode['data']['text'] = 'fish'
+        return self.prepare_json_outgoing(decode)
+  ```
+
+ Now execute `socketclient.py` and tell it where to find your responder using the `-r/--responder` option, 
+ if you placed the file in the `responders` folder, your executed command should look something like this:
+
+ ```
+ python socketclient.py -r responders/fishresponder.py:FishResponder
+ ```
+
+Finally, open up Saleae Logic 2 and attach the Socket Transport analyzer to a low level analyzer of your choice,
+capture some data or analyze an existing file and watch as your data is transformed to fish.
+
+![Screenshot of FishResponder](assets/fish-responder.png)
+
+## Using `socketserver` and `socketclient` Over the Network
 
 While this HLA was designed primarily with the intent of routing data from within Saleae to another
-data consumer on the same machine, the decision to use sockets as the underlying transport means we
-get the ability to send Saleae data to a remote machine for free. Again, this solution is not necessarily
-robust, so YMMV.
+data consumer on the same machine (using localhost loopback), the decision to use sockets as the underlying 
+transport means we get the ability to send Saleae data to a remote machine for free. Again, this solution
+is not necessarily robust, so YMMV.
