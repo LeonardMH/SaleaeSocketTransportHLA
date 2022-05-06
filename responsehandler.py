@@ -1,7 +1,7 @@
-import imp
 import json
 
 from dataclasses import dataclass
+from typing import Union
 
 
 @dataclass
@@ -10,7 +10,8 @@ class TransportData:
     as_dict: dict
     as_str: str
 
-    def from_any(data):
+    @staticmethod
+    def from_any(data: Union[bytes, dict, str]):
         """Create TransportData from any of the common data types"""
         if isinstance(data, bytes):
             return TransportData.from_bytes(data)
@@ -18,9 +19,10 @@ class TransportData:
             return TransportData.from_dict(data)
         elif isinstance(data, str):
             return TransportData.from_str(data)
-        
+
         raise TypeError(f"Got unexpected input type for data: {type(data)}")
 
+    @staticmethod
     def from_bytes(data: bytes):
         as_str = data.decode('utf-8')
         return TransportData(
@@ -28,6 +30,7 @@ class TransportData:
             as_str=as_str,
             as_dict=json.loads(as_str))
 
+    @staticmethod
     def from_dict(data: dict):
         as_str = json.dumps(data)
         return TransportData(
@@ -35,6 +38,7 @@ class TransportData:
             as_str=as_str,
             as_dict=data)
 
+    @staticmethod
     def from_str(data: str):
         return TransportData(
             as_bytes=data.encode('utf-8'),
@@ -44,6 +48,7 @@ class TransportData:
 
 class ResponseHandler:
     """Implement this class to handle decoding over multiple frames of data"""
+
     def __init__(self):
         # as you build frame information, store it here, when done with the frame set this back to None
         self.tracking_frame = None
@@ -59,14 +64,14 @@ class ResponseHandler:
     def handle_incoming_response(self, recv: str) -> bytes:
         raise NotImplementedError("Must be implemented by subclass")
 
-    def prepare_json_incoming(self, data) -> dict:
+    def prepare_json_incoming(self, data: Union[bytes, dict, str]) -> dict:
         if not isinstance(data, TransportData):
             data = TransportData.from_any(data)
 
         self.current_incoming = data
         return data.as_dict
 
-    def prepare_json_outgoing(self, data) -> bytes:
+    def prepare_json_outgoing(self, data: Union[bytes, dict, str]) -> bytes:
         if not isinstance(data, TransportData):
             data = TransportData.from_any(data)
 
@@ -90,7 +95,7 @@ class DefaultResponder(ResponseHandler):
 
     def determine_analyzer_type(self, decoded):
         """Determines the input type of the data we are decoding, Saleae provides no direct indication of this
-        
+
         Returns None if type cannot be reliably determined or incoming data is not a frame.
         """
         if decoded['type'] != 'frame':
@@ -104,14 +109,14 @@ class DefaultResponder(ResponseHandler):
             return None
 
         if ft == 'data':
-            # i2c and async-serial both contain a data field, i2c will always contain an 'ack' field in the data 
+            # i2c and async-serial both contain a data field, i2c will always contain an 'ack' field in the data
             # which serial does not
             if 'ack' not in data:
                 return 'async-serial'
             else:
                 return 'i2c'
         elif ft in ['address', 'start', 'stop']:
-            # i2c frames do not always have a data key, but they'll always have one of these at least and no 
+            # i2c frames do not always have a data key, but they'll always have one of these at least and no
             # other analyzer uses these keys
             return 'i2c'
         elif ft in ['enable', 'disable', 'result', 'error']:
@@ -132,13 +137,19 @@ class DefaultResponder(ResponseHandler):
         if self.analyzer_type is None:
             self.analyzer_type = determined_analyzer
 
-        # look up the correct decoder for this analyzer_type, for anything we don't understand, 
+        # look up the correct decoder for this analyzer_type, for anything we don't understand,
         # just respond back with the same data we got
         json_response = self.decode_map.get(self.analyzer_type, self.prepare_json_outgoing)(decoded)
         return self.prepare_json_outgoing(json_response)
 
 
 class NullResponder(ResponseHandler):
-    """A responde handler that doesn't respond"""
+    """A response handler that doesn't respond"""
     def handle_incoming_response(self, recv: str) -> bytes:
         return None
+
+
+class AckResponder(ResponseHandler):
+    """A response handler that just ACKs message receipt"""
+    def handle_incoming_response(self, recv: str) -> bytes:
+        return self.prepare_json_outgoing({'type': 'ACK'})

@@ -1,4 +1,3 @@
-import json
 import socket
 import threading
 import logging
@@ -54,7 +53,7 @@ def rx_data_until_newline(conn, current_accumulator=None, timeout=1.0):
             accumulator[0] += split_data[0]
             accumulator.extend(split_data[1:])
             break
-    
+
     # accumulator now contains an initial entry which is all the data we got up to the point of the first 
     # newline, as there could be multiple newlines in any given data packet, we will return a tuple here:
     # - the first entry is a list containing all of the 'valid' data packets
@@ -62,9 +61,7 @@ def rx_data_until_newline(conn, current_accumulator=None, timeout=1.0):
     return accumulator[0:-1], accumulator[-1]
 
 
-def listener(conn, addr, **kwargs):
-    import json
-
+def listener(conn, **kwargs):
     quiet_receive = kwargs.get('quiet_receive', False)
     quiet_response = kwargs.get('quiet_response', False)
     show_msg_dir = kwargs.get('show_msg_dir', False)
@@ -79,17 +76,17 @@ def listener(conn, addr, **kwargs):
             try:
                 data, data_accumulator = rx_data_until_newline(conn, current_accumulator=data_accumulator)
 
-                # if the rx_data function hits a timeout it will return (None, None), in this case go 
+                # if the rx_data function hits a timeout it will return (None, None), in this case go
                 # back to rebinding
                 if any([x is None for x in (data, data_accumulator)]):
                     return
             except ConnectionResetError:
-                # it's possible the connection can be reset by Saleae here on capture start, 
+                # it's possible the connection can be reset by Saleae here on capture start,
                 # if so just go back and rebind the socket
                 return
 
             for packet in data:
-                # if we get here, we got some data in the receive buffer, 
+                # if we get here, we got some data in the receive buffer,
                 # process it and respond back to Saleae
                 if not quiet_receive:
                     print(("-> " if show_msg_dir else "") + packet)
@@ -118,14 +115,14 @@ def event_loop(host, port, **kwargs):
         if (conn, addr) == (None, None):
             continue
 
-        listener(conn, addr, **kwargs)
+        listener(conn, **kwargs)
 
 
 def parse_responder_spec_to_parts(responder_spec: str) -> Tuple[str, str]:
     from os.path import join
 
-    # begin by splitting on the colon to extract the class name, there 
-    # could possibly be colons in the file name which would cause more 
+    # begin by splitting on the colon to extract the class name, there
+    # could possibly be colons in the file name which would cause more
     # than two splits, so we can use the splat operator to collect all
     # of these into a list and then rejoin them later
     *fpath, class_name = responder_spec.split(':')
@@ -157,7 +154,7 @@ if __name__ == "__main__":
     parser.add_argument("-P", "--port", default=DEFAULT_PORT, help="port to bind to", type=int)
     parser.add_argument('-q', '--quiet', action='store_true', help="do not print any message responses")
     parser.add_argument(
-        '-r', '--responder', 
+        '-r', '--responder',
         help="custom responder to process messages from server, provide a full path and class name as <fpath>:<class_name>")
     parser.add_argument('--quiet-receive', action='store_true', help="do not print the data received from the server")
     parser.add_argument('--quiet-response', action='store_true', help="do not print the data sent back to the server")
@@ -173,7 +170,7 @@ if __name__ == "__main__":
         quiet_receive = args.quiet_receive
         quiet_response = args.quiet_response
         show_msg_dir = args.show_message_dir
-    
+
     if args.responder:
         responder = load_responder_classtype(*parse_responder_spec_to_parts(args.responder))()
     else:
@@ -197,6 +194,7 @@ if __name__ == "__main__":
 
     try:
         event_loop_thread.start()
-        while True: time.sleep(0.1)
+        while True:
+            time.sleep(0.1)
     except KeyboardInterrupt:
         sys.exit(0)
