@@ -1,8 +1,8 @@
 {
   "name": "Socket Transport",
-  "apiVersion": "1.1.0",
+  "apiVersion": "1.0.0",
   "author": "Michael Leonard",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Send and receive analyzer data over a network socket (routed to localhost by default).",
   "extensions": {
     "Socket Transport": {
